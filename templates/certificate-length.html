@@ -1,0 +1,73 @@
+{% include 'header.html' %}
+
+<div class="date">08/08-2022</div>
+<h2><b>Certificate length:</b> Is 4096 bit preferable over 2048 bit?</h2>
+
+<p><i>This post was intentionally written for <a class="insideurls" href="https://blog.semaphor.dk/20211230T1728">Semaphor's Blog</a></i></p>
+
+<b>A common misconception is that the bigger the certificate, the better - and while the idiom is true in some sense, there is a little more to it.</b>
+
+<p>When generating a certificate for e.g. a webserver, you are often prompted with the question of of what length your key should be. Typical options to choose from are 2048, 3072 or 4096 bits. I, myself, have been choosing 4096 over 2048 and 3072 bits several times, before realising that it may not always constitute the best solution in practice.</p>
+
+<h3>Transport Layer Security</h3>
+More than 25 years ago, SSL was introduced to secure HTTP traffic. SSL is short for Secure Socket Layer and today SSL is deprecated and replaced by SSL's descendant, TLS. TLS is todays standard when securing HTTP traffic. More specifically, TLS version 1.2 and 1.3 are currently considered secure and their predecessors are obsolete. With TLS 1.2 being the most widespread of the two, let's take a look at what happens when a client establishes a secure connection with a webserver.
+
+As an example, let's connect to semaphor.dk over TLS 1.2. and capture the traffic with <code>tcpdump</code>:
+
+<pre class="code"><span class="hostubuntu">user@host:~$ </span>tcpdump -ni eth0 "tcp port 443 and (tcp[((tcp[12] & 0xf0) >> 2)] = 0x16)" -w semaphor_handshake.pcap
+</pre>
+
+<p>We are using <code>openssl</code> to enforce a connection over TLS 1.2</p>
+
+<pre class="code"><span class="hostubuntu">user@host:~$ </span>openssl s_client -cipher aRSA -connect semaphor.dk:443 -tls1_2
+</pre>
+
+<p>The packets specifics can then be read opened and scrutinised in e.g. Wireshark</p>
+
+<p>The first packet, Client Hello, indicates that a client would like begin an SSL/TLS negotiation, in order to establish a secure connection. The Client Hello packet contains the TLS versions as well as the cipher suites it supports.</p>
+
+<p>The server responds with a chosen TLS version ass well as a cipher suite to use. The server also sends its certificate (along with its issuers certificate) and a newly generated public key, used by the client to derive the master-secret. Finally, the server signs a hash of the communication with it's certificates private key, before passing the turn to the client with a Server Hello Done. The client then verifies that the certificate of the server is valid and signed by an intermediate certificate, which is then signed by a trusted CA trusted known to the browser. The client also verifies the signature of the hash with the public key included in the servers certificate and provides the server with a newly generated public key, that the server then uses to compute the master-secret... Or something like that. There are several versions of the key establishment protocol, and the different cipher suites along with TLS versions may change things up a bit.</p>
+
+<img class="img" src="/static/images/certificate-length/wireshark.jpeg" alt="Wireshark" width="85%"/>
+<center><i> The Server Key Exchange containing the server signature</i></center>
+
+<p>The important part is the signing and verification, whereas the former is shown in the image above. These tasks are computationally costly and may slow things down quite a bit.
+  While it's computationally costlier for a client to verify the signature of a 4096 bit certificate, the real bottleneck is happening when the server signs the hash of the previous communication. The client will at most have to verify only a few signatures at a time, per server. The server, however, may experience a demand to sign hundreds, or thousands of hashes per second. This kind of bottleneck happens when numerous clients attempts to establish a secure connecting simultaniously: e.g. joining an conference starting at a specific time. Thus in a short time frame, the server has to do numerous signatures, which occupies the servers ressources, resultning in hang time and noticable latency. Below is an image showing the Server Key Exhcange-packet captured with tcpdump containing the server signature.</p>
+
+<h3>Certificate length and security</h3>
+
+<p>To put it into perspective, the approximate time ratio for signing and verifying with 2048, 3072 and 4096 bit keys are computed with the <code>openssl speed</code> tool and shown below.</p>
+
+<pre class="code"><span class="hostubuntu">user@host:~$ </span> openssl speed rsa2048 rsa3072 rsa4096
+  [...]
+  sign    verify    sign/s verify/s
+  rsa 2048 bits 0.000553s 0.000017s   1809.9  60257.9
+  rsa 3072 bits 0.001737s 0.000036s    575.7  27909.4
+  rsa 4096 bits 0.004187s 0.000063s    238.9  15801.3
+</pre>
+
+<p>In order to emphasize the dirfference, I've created the graph below. The graph shows an exponential growth when it comes to reducing the key size.
+</p>
+
+<img class="img" src="/static/images/certificate-length/graph.jpeg" alt="graph" width="45%"/>
+<center><i> The signatures per second with different key sizes.</i></center>
+
+<p>With this is mind, it is becoming clearer why it could be an advantage, to avoid using 4096 bit certificates. But how significant is impact in terms of security when reducing the key size?</p>
+
+<p>According to NIST's (National Institute of Standards and Technology)  <a class="insideurls" href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf"> Recommendation for Key Management: Part 1 - General</a>, an RSA key of size 2048 is equivalent to a security strength of 112, while 3072 is equivalent to a security strength of 128 (like SHA256).</p>
+
+<p>The security strength, or security bits, is a notion used to determine the cryptographic strength of cryptographic algorithms and functions. The table below is from <a class="insideurls" href="https://en.wikipedia.org/wiki/Security_level">Wikipedia</a>, but originally published by <a class="insideurls" href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf">NIST</a>. The table shows a comparison of algorithms and their security bits. Note that an elliptic curve (x25519) key with a length of 255 has the same security strength as a 2048 bit RSA key.</p>
+
+
+<img class="img" src="/static/images/certificate-length/comparison-table.jpeg" alt="graph" width="60%"/>
+<center><i>Table with comparisons cryptographic algorithms and their security bits</i></center>
+
+<p>NIST also provides a scheme of security bits and their respective life expectancy. Namely for how long, they assess a security strength to be sufficient and secure. As seen in the table below, a security strength &#60; 112 is considered unsafe and legacy use, however a security strength of 112 and above is considered safe acceptable through 2030. Hopefully, by then, elliptic curve cryptography will have substituted RSA completely. The image below shows the life expactancy of different security strengths.</p>
+
+<img class="img" src="/static/images/certificate-length/life-expectancy.jpeg" alt="graph" width="50%"/>
+<center><i> Table showing the life expectancy of different security strengths</i></center>
+
+<h3>Conclusion</h3>
+<p>The word on the web goes that 2048 bit keys are more than safe enough and 4096 bits are a total overkill. It's argueable that speed and perfomance can be drastically optimised in cases where a e.g. webserver serves a considerable amount of clients at the same time. I'll let it be up to you to decide what key length fits your needs, but it is definitely worth considering key length before generating your next certificate.</p>
+
+{% include 'footer.html' %}

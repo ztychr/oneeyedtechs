@@ -1,0 +1,155 @@
+<div class="date">07/03-2019</div>
+
+<h2>Weechat & facebook setup</h2>
+<b>Personal weechat configuration checklist</b><br><br>
+
+<p>Adding the Weechat repository.</p>
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>sudo sh -c 'echo "deb https://weechat.org/ubuntu $(lsb_release -cs) main" >> /etc/apt/sources.list.d/weechat.list'
+</pre>
+
+<p>Add the repository key.</p>
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>sudo apt-key adv --keyserver keys.gnupg.net --recv-keys 11E9DE8848F2B65222AA75B8D1820DB22A11534E
+</pre>
+
+<p>Update and upgrade and install Weechat</p>
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>sudo apt-get update
+<span class="hostubuntu">user@ubuntu:~$ </span>sudo apt-get install weechat
+</pre>
+
+<p>Launch weechat from the terminal and install scripts. Complete list of preinstalled + manually installed scripts below.</p>
+<pre class="code">/script install iset.pl
+/script install urlshorten.py
+/script install colorize_nicks.py
+/script install multiline.pl
+/script install autosort.py
+/script install highmon.pl
+/script install grep.py
+/script install anotify.py
+/script install lnotify.py
+/script install bitlbee_completion.py 
+</pre>
+
+<p>The following parameters can be set from the buffer as written here or edited in iset.</p>
+<pre class="code">/set irc.server_default.autoconnect = on 
+/set irc.server_default.nicks = "Your nick" 
+/set irc.server_default.password = "Your password"
+</pre>
+
+<p>Set up SASL authentication. Some channels requires you to authenticate through SASL as well.</p>
+
+<pre class="code">/set irc.server_default.sasl_password = "Your password"
+/set irc.server_default.sasl_username = "Your nick"
+/set irc.server_default.sasl_mechanism dh-blowfish
+</pre>
+
+<p><b>Edit: Use ecdsa-nist256p-challenge in order to authenticate. The following commands are taken from the sasl authentication section within weechats documentation.</b></p>
+
+<p>Generate a key.</p>
+
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>openssl ecparam -genkey -name prime256v1 -out ~/.weechat/ecdsa.pem
+</pre>
+
+<p>Get the key as base64.</p>
+
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>openssl ec -noout -text -conv_form compressed -in ~/.weechat/ecdsa.pem | grep '^pub:' -A 3 | tail -n 3 | tr -d ' \n:' | xxd -r -p | base64
+</pre>
+
+<p>To set the authentication to edcsa, login into freenode and run the following command.</p>
+
+<pre class="code">
+/msg nickserv set pubkey [base64 encoded public key from previous command]
+</pre>
+
+<p>To add and connect to freenode on an SSL connection, go to the weechat control buffer and enter the following commands. </p>
+
+<pre class="code">/server add freenode chat.freenode.net/6697 -ssl -autoconnect
+/connect freenode
+/set irc.server.freenode.autojoin "#channels,#you,#wish,#to,#autojoin"
+</pre>
+
+<p>Tweak a few settings; comprising independent server buffers, moving them to the top and hiding join/part/quit messages.</p>
+
+<pre class="code">/set irc.look.server_buffer independent 
+/set weechat.bar.buflist.position top 
+/bar hide nicklist 
+/filter add irc_smart * irc_smart_filter * 
+/filter add joinquit * irc_join,irc_part,irc_quit * 
+/save
+</pre>
+
+<p>Relaunch weechat. You should now be connected with your registered login on the freenode network. Same proccess for joining other irc networks.</p>
+<br>
+<b>Installing and configuring the bitlee facebook plugin</b>
+
+<p>Install bitlbee and the Facebook plugin.</p>
+
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>sudo apt-get install bitlbee bitlbee-plugin-facebook
+</pre>
+
+<p>Start the bitlbee service.</p>
+
+<pre class="code"><span class="hostubuntu">user@ubuntu:~$ </span>service bitlbee start
+</pre>
+
+<p>Add the bitlbee server and connect.</p>
+
+<pre class="code">/server add bitlbee localhost/6667 -autoconnect
+/connect bitlbee
+</pre>
+
+<p>In the &bitlbee control panel, add your facebook account. Generate an app password on the facebook website for extra security measures.</p>
+
+<pre class="code">account add facebook [e-mail] [password]
+account facebook on
+</pre>
+
+<p>Some optional parameters to set in the &bitlbee control channel. These will prevent the <i>read</i> message, show unread messages when opening weechat and open groupchats when a new message is sent.</p>
+
+<pre class="code">account facebook set mark_read false 
+account facebook set mark_read_reply false 
+account facebook set show_unread true 
+account facebook set group_chat_open all 
+</pre>
+
+<p>To add groupchats permanently to the buffer, add them with the following commands. Also, set show_users to your preferred value to display friends. My facebook chat is always set to "offline".</p>
+
+<pre class="code">chat add facebook 123456789 #some-channel 
+channel #some-channel set auto_join true 
+channel set show_users "online,away,offline" 
+</pre>
+
+<p>Register within bitlbee to save bitlbee accounts.</p>
+
+<pre class="code">register [password] 
+save
+</pre>
+
+<p>Further security measures.</p>
+
+<pre class="code">/set irc.server_default.msg_part ""
+/set irc.server_default.msg_quit ""
+</pre>
+
+<pre class="code">/set irc.ctcp.clientinfo ""
+/set irc.ctcp.finger ""
+/set irc.ctcp.source ""
+/set irc.ctcp.time ""
+/set irc.ctcp.userinfo ""
+/set irc.ctcp.version ""
+/set irc.ctcp.ping ""
+</pre>
+
+<pre class="code">/plugin unload xfer
+/set weechat.plugin.autoload "*,!xfer"
+</pre>
+
+<pre class="code">/set irc.server.freenode.sasl_username "${sec.data.freenode_username}"
+/set irc.server.freenode.sasl_password "${sec.data.freenode_password}"
+</pre>
+
+<p>Finally move buffers to the top.</p>
+
+<pre class="code">/set weechat.bar.buflist.position top
+</pre>
+
+<!-- https://weechat.org/files/doc/devel/weechat_user.en.html -->

