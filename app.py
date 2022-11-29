@@ -9,7 +9,7 @@ def get_host():
     global host
     if (request.headers.get('Host') == "oneeyedtechs.com"):
         host = "One Eyed Techs"
-    elif (request.headers.get('Host') == "nordskov.net"):
+    elif (request.headers.get('Host') == "www.nordskov.net"):
         host = "Nordskov Blog"
 
 @app.route("/")
@@ -44,6 +44,6 @@ def htb_jerry():
 def htb_poison():
     return render_template('htb-poison.html', name='htb-poison', host=host)
 
-@app.route("/post/case-competition")
-def case_competition():
-    return render_template('case-competition.html', name='case-competition', host=host)
+#@app.route("/post/case-competition")
+#def case_competition():
+#    return render_template('case-competition.html', name='case-competition', host=host)
