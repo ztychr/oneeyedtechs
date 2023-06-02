@@ -11,6 +11,8 @@ def get_host():
         host = "One Eyed Techs"
     elif (request.headers.get('Host') == "www.nordskov.net"):
         host = "Nordskov Blog"
+    else:
+        host = "One Eyed Techs"
 
 @app.route("/")
 def index():

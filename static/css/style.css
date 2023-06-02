@@ -198,6 +198,17 @@ a.post:hover {
     color: #DBDBDB;
 }
 
+a.insideurls, a.insideurls:visited {
+    text-decoration: none;
+    font-weight: bold;
+    color: #DBDBDB;
+}
+
+
+a.insideurls:hover {
+    text-decoration: underline;
+}
+
 .insideurls:hover {
     text-decoration: underline;
 }
