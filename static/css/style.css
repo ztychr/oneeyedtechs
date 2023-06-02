@@ -114,7 +114,7 @@ a.post:link, a.post:visited {
 
 .post {
     background: #1C2024;
-    border-radius: 5px;
+    border-radius: 5px 5px 5px 5px;
     padding-top: 20px;
     padding-left: 10px;
     padding-right: 10px;
@@ -138,6 +138,23 @@ a.post:hover {
     transition: 0.3s;
     cursor: pointer;
 }
+
+a.post .menudate {
+    margin-left: auto;
+    margin-right: auto;
+    left: 0;
+    right: 0;
+    position: absolute;
+    bottom: 3px;
+    width: 75%;
+}
+/*
+a.post:hover .menudate{
+    background: #1C2024;
+    color: #f2f2f2;
+    transition: 0.3s;
+    cursor: pointer;
+}*/
 
 .topnav {
     border-radius: 5px;
@@ -256,7 +273,7 @@ a.insideurls:hover {
     max-height: 70px;
     align-items: center;
     position: absolute;
-    bottom: 25px;
+    bottom: 43px;
     margin-left: auto;
     margin-right: auto;
     left: 0;
